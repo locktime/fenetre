@@ -62,7 +62,7 @@
   .frame {
     position: fixed; inset: 4.2vh 3.2vw;
     display: grid;
-    grid-template-columns: 40fr 22fr 38fr;
+    grid-template-columns: minmax(0, 40fr) minmax(0, 22fr) minmax(0, 38fr);   /* largeurs fixes, quel que soit le contenu */
     grid-template-rows: 1fr auto;
     border: 1px solid var(--line);
   }
@@ -211,6 +211,8 @@
   'use strict';
 
   /* ---------------- Réglages par l'URL ----------------
+     ?gsheet=ID       feuille Google Sheets partagée « tous ceux qui ont le lien » (identifiant entre /d/ et /edit)
+     &gid=123         onglet de la feuille (facultatif : sans lui, le premier onglet)
      ?sheet=2PACX-…   feuille Google Sheets publiée sur le web (identifiant de l'adresse « pub »)
      ?csv=URL         n'importe quel CSV (même format que modele-google-sheets.csv)
      ?gist=ID         premier fichier d'un gist GitHub, au format data.md
@@ -219,10 +221,11 @@
      ?relay=URL       le pont qui lance les applis (défaut : la machine qui sert cette page)
      ?h=19.5          force l'heure de la lumière, pour tester                                   */
   var P = new URLSearchParams(location.search);
+  var GSHEET = P.get('gsheet'), GID = P.get('gid');   // sans gid, Google prend le premier onglet
   var SHEET = P.get('sheet'), CSV = P.get('csv'), GIST = P.get('gist'), SRC = P.get('src') || 'data.md', WRITE = P.get('write');
   var RELAY = P.get('relay') || (/^http:/.test(location.protocol) ? location.origin : '');
   var FORCED_HOUR = P.has('h') ? parseFloat(P.get('h')) : null;
-  var REFRESH_MS = (SHEET || CSV || GIST) ? 120000 : 30000;
+  var REFRESH_MS = GSHEET ? 60000 : (SHEET || CSV || GIST) ? 120000 : 30000;
   var MAX_TASKS = 7, STORE_KEY = 'fenetre.v2';
 
   var $ = function (id) { return document.getElementById(id); };
@@ -369,7 +372,7 @@
     $('goals').innerHTML = data.goals.slice(0, 4).map(function (g) {
       var has = g.value !== null && g.max;
       var ratio = has ? Math.max(0, Math.min(1, g.value / g.max)) : 0;
-      var count = !has ? '' : g.pct ? Math.round(g.value) + ' %' : fmt(g.value) + ' / ' + fmt(g.max);
+      var count = !has ? '' : (g.pct || g.max === 100) ? Math.round(g.value) + ' %' : fmt(g.value) + ' / ' + fmt(g.max);
       return '<li class="goal"><div class="row"><span class="name">' + esc(g.name) + '</span><span class="count">' + count + '</span></div>' +
         (has ? '<div class="track"><div class="fill" style="width:' + (ratio * 100).toFixed(1) + '%"></div></div>' : '') + '</li>';
     }).join('');
@@ -455,6 +458,8 @@
 
   /* ---------------- Chargement, avec repli sur la dernière version ---------------- */
   function sourceURL() {
+    // L'export refuse tout paramètre en plus, mais il est servi sans cache : pas besoin d'horodatage.
+    if (GSHEET) return 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(GSHEET) + '/export?format=csv' + (GID ? '&gid=' + encodeURIComponent(GID) : '');
     if (SHEET) return 'https://docs.google.com/spreadsheets/d/e/' + encodeURIComponent(SHEET) + '/pub?output=csv&single=true&_=' + Date.now();
     if (CSV) return CSV + (CSV.indexOf('?') < 0 ? '?' : '&') + '_=' + Date.now();
     return SRC + (SRC.indexOf('?') < 0 ? '?' : '&') + '_=' + Date.now();
