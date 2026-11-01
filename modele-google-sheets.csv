@@ -1,0 +1,9 @@
+Type,Texte,Fait,Total
+tâche,Remplacer cette liste par la tienne,FALSE,
+tâche,Cocher une tâche : la case Fait,FALSE,
+tâche,Afficher le dashboard sur la TV,TRUE,
+tâche,Régler la confidentialité de la TV,FALSE,
+objectif,Lire 12 livres,4,12
+objectif,Courir 100 km,35,100
+objectif,Épargne vacances,60,
+note,Liste d'exemple : importe ce fichier dans Google Sheets puis modifie-le.,,

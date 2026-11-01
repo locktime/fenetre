@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fenêtre</title>
+<style>
+  /* Polices embarquées (latin) : Michroma et Geist, licence OFL, servies avec la page pour ne pas dépendre du réseau de la TV. */
+  @font-face { font-family: "Michroma"; src: url("assets/fonts/michroma.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+  @font-face { font-family: "Geist"; src: url("assets/fonts/geist.woff2") format("woff2"); font-weight: 300 500; font-display: swap; }
+  /*
+    Fenêtre, V2. Dashboard TV pour un écran 16:9 lu à trois mètres (Hisense VIDAA, Chrome 111, 1280×720 CSS).
+    Une planète noire vue du dessus, une grille de fines lignes, du verre sombre.
+    Fond : Mercure, plaines volcaniques du nord. NASA / Johns Hopkins APL / Carnegie Institution (domaine public), PIA19415.
+    Toutes les tailles sont en vw/vh : la page suit n'importe quel écran 16:9.
+  */
+  :root {
+    --ink: #E8EAF0;
+    --ink-soft: rgba(232, 234, 240, .56);
+    --ink-faint: rgba(232, 234, 240, .32);
+    --line: rgba(255, 255, 255, .13);
+    --glass: rgba(255, 255, 255, .055);
+    --glass-edge: rgba(255, 255, 255, .22);
+    --light: #FFFFFF;        /* couleur de la lumière du moment, recalculée chaque minute */
+    --lx: 50%; --ly: 10%;    /* position du soleil */
+    --la: .4;                /* intensité */
+    --shade: 0;              /* assombrissement de nuit */
+    --display: "Michroma", "Eurostile", "Bank Gothic", sans-serif;
+    --text: "Geist", "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #07080B; }
+  body { color: var(--ink); font-family: var(--text); -webkit-font-smoothing: antialiased; cursor: none; }
+
+  /* ---------- Le sol ---------- */
+  .ground { position: fixed; inset: 0; overflow: hidden; }
+  .planet {
+    position: absolute; inset: -7%;
+    background: url("assets/planet.jpg") center / cover no-repeat;
+    will-change: transform;
+    animation: drift 240s ease-in-out infinite alternate;
+  }
+  .shade { position: absolute; inset: 0; background: #05060A; opacity: var(--shade); }
+  .light {
+    position: absolute; inset: 0; mix-blend-mode: screen; opacity: var(--la);
+    background: radial-gradient(ellipse 70% 60% at var(--lx) var(--ly), var(--light) 0%, transparent 70%);
+  }
+  /* Les changements de lumière sont lents, sauf le tout premier affichage. */
+  .ground.ready .shade, .ground.ready .light { transition: opacity 60s linear; }
+  .mist { position: absolute; inset: -10%; background-repeat: repeat-x; background-size: auto 100%; will-change: transform; }
+  .mist.a { background-image: url("assets/mist1.webp"); animation: mistA 150s linear infinite; opacity: .5; }
+  .mist.b { background-image: url("assets/mist2.webp"); animation: mistB 230s linear infinite; opacity: .38; }
+  .grain {
+    position: absolute; inset: 0; opacity: .06; mix-blend-mode: overlay; pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  @keyframes drift { from { transform: translate(-1.6%, -1%) scale(1.04); } to { transform: translate(1.6%, 1.2%) scale(1.09); } }
+  @keyframes mistA { from { transform: translateX(0); } to { transform: translateX(-33.33%); } }
+  @keyframes mistB { from { transform: translateX(-33.33%); } to { transform: translateX(0); } }
+
+  /* ---------- La grille ---------- */
+  .frame {
+    position: fixed; inset: 4.2vh 3.2vw;
+    display: grid;
+    grid-template-columns: 40fr 22fr 38fr;
+    grid-template-rows: 1fr auto;
+    border: 1px solid var(--line);
+  }
+  /* Les panneaux sont du verre sombre posé sur le sol ; la cellule du milieu reste une fenêtre ouverte. */
+  .cell { position: relative; min-height: 0; background: rgba(6, 7, 11, .5); box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
+  .cell.window { background: transparent; box-shadow: none; }
+  .cell + .cell { border-left: 1px solid var(--line); }
+  .bar { grid-column: 1 / -1; border-top: 1px solid var(--line); background: rgba(6, 7, 11, .55); }
+
+  /* Colonne gauche : date, horloge, note */
+  .time { display: flex; flex-direction: column; justify-content: space-between; padding: 3.4vh 2.2vw 3vh; }
+  .date { font-family: var(--display); font-size: 1.15vw; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); margin: 0; }
+  .clock {
+    font-family: var(--display); font-size: 7.6vw; line-height: 1; letter-spacing: -.01em;
+    font-variant-numeric: tabular-nums; margin: 0; color: var(--ink);
+  }
+  .clock .sep { color: var(--light); opacity: .9; }
+  .note { font-family: var(--text); font-weight: 300; font-size: 1.55vw; line-height: 1.45; color: var(--ink-soft); margin: 2.2vh 0 0; max-width: 34vw; }
+  .note:empty { display: none; }
+
+  /* Colonne centrale : la fenêtre sur le sol, et une étoile de repère */
+  .window { display: flex; align-items: center; justify-content: center; }
+  .star { width: 2.2vw; height: 2.2vw; color: var(--ink-soft); }
+  .axis { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: linear-gradient(to bottom, transparent, var(--line) 30%, var(--line) 70%, transparent); }
+
+  /* Colonne droite : tâches et objectifs */
+  .day { display: flex; flex-direction: column; padding: 3.4vh 2vw 2.4vh; }
+  .day h2 {
+    font-family: var(--display); font-size: 1.05vw; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-soft); margin: 0 0 1.6vh; display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .day h2 small { font-family: var(--text); font-size: 1.15vw; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+  .tasks { position: relative; list-style: none; margin: 0; padding: 0; flex: 0 1 auto; min-height: 0; overflow: hidden; }
+  .task {
+    position: relative; display: grid; grid-template-columns: 1.3vw 1fr; column-gap: 1vw; align-items: baseline;
+    font-weight: 400; font-size: 1.85vw; line-height: 1.3; padding: 1.15vh .9vw; border-radius: .5vw;
+  }
+  .task .mark { width: .95vw; height: .95vw; border-radius: 50%; border: 1px solid var(--ink-soft); transform: translateY(.02vw); }
+  .task .txt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .task.done .mark { background: var(--light); border-color: var(--light); box-shadow: 0 0 .9vw rgba(255,255,255,.35); }
+  .task.done .txt { color: var(--ink-faint); text-decoration: line-through; text-decoration-color: var(--ink-faint); }
+  .task.just-done .txt { animation: glow 2s ease-out; }
+  @keyframes glow { 0% { text-shadow: 0 0 1.2vw var(--light); color: var(--ink); } 100% { text-shadow: none; } }
+  .more { font-size: 1.15vw; color: var(--ink-faint); margin: .6vh 0 0 3.2vw; }
+  .empty { font-weight: 300; font-size: 1.7vw; color: var(--ink-soft); margin: 0 .9vw; }
+
+  /* La plaque de verre : le focus, qui glisse d'une ligne à l'autre */
+  .plate {
+    position: absolute; left: 0; right: 0; top: 0; height: 0; border-radius: .5vw; pointer-events: none;
+    background: var(--glass);
+    border: 1px solid var(--glass-edge);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 .8vh 2.4vh rgba(0,0,0,.35);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    opacity: 0; transition: transform .32s cubic-bezier(.2,.8,.2,1), height .32s cubic-bezier(.2,.8,.2,1), opacity .4s ease;
+  }
+  .tasks.focused .plate { opacity: 1; }
+
+  .goals-block { margin-top: auto; padding-top: 2.6vh; border-top: 1px solid var(--line); }
+  .goals { list-style: none; margin: 0; padding: 0; }
+  .goal { padding: .8vh .9vw 1vh; }
+  .goal .row { display: flex; justify-content: space-between; align-items: baseline; gap: 1vw; }
+  .goal .name { font-size: 1.45vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .goal .count { font-size: 1.1vw; color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .goal .track { height: 2px; background: rgba(255,255,255,.12); margin-top: 1vh; overflow: hidden; }
+  .goal .fill { height: 100%; background: var(--light); opacity: .9; transition: width 1.2s ease; box-shadow: 0 0 .6vw rgba(255,255,255,.4); }
+
+  /* Barre du bas : les tuiles d'applis. OK dessus demande au pont d'ouvrir l'appli sur la TV. */
+  .bar { display: flex; align-items: stretch; }
+  .apps { position: relative; display: flex; flex: 1; min-width: 0; }
+  .app {
+    flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center;
+    padding: 2.4vh 1vw; border-right: 1px solid var(--line); position: relative;
+  }
+  .app .name {
+    font-family: var(--display); font-size: 1.05vw; letter-spacing: .12em; text-transform: uppercase; color: var(--ink);
+    white-space: nowrap; transition: transform .32s cubic-bezier(.2,.8,.2,1), color .3s;
+  }
+  .apps.focused .app.on .name { transform: scale(1.08); }
+  .app.busy .name { color: var(--light); }
+  .apps .plate { border-radius: 0; }
+  .apps.focused .plate { opacity: 1; }
+  .status { display: flex; align-items: center; padding: 0 1.6vw; font-size: .95vw; color: var(--ink-soft); white-space: nowrap; max-width: 34vw; overflow: hidden; text-overflow: ellipsis; }
+  .status:empty { display: none; }
+
+  /* ---------- Entrée en cascade, une seule fois ---------- */
+  .frame { opacity: 0; animation: frameIn 1.2s .1s ease forwards; }
+  @keyframes frameIn { to { opacity: 1; } }
+  .in { opacity: 0; transform: translateY(1.2vh); animation: cascade .9s cubic-bezier(.2,.7,.2,1) forwards; }
+  .in:nth-child(1) { animation-delay: .35s; } .in:nth-child(2) { animation-delay: .5s; } .in:nth-child(3) { animation-delay: .65s; }
+  .in.late { animation-delay: .85s; }
+  @keyframes cascade { to { opacity: 1; transform: none; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .planet, .mist { animation: none; }
+    .frame, .in { animation: none; opacity: 1; transform: none; }
+    .plate, .goal .fill, .shade, .light { transition: none; }
+    .task.just-done .txt { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="ground" aria-hidden="true">
+  <div class="planet"></div>
+  <div class="shade"></div>
+  <div class="light"></div>
+  <div class="mist a"></div>
+  <div class="mist b"></div>
+  <div class="grain"></div>
+</div>
+
+<main class="frame">
+  <section class="cell time in">
+    <p class="date" id="date"></p>
+    <div>
+      <h1 class="clock" id="clock">--<span class="sep">:</span>--</h1>
+      <p class="note" id="note"></p>
+    </div>
+  </section>
+
+  <section class="cell window in" aria-hidden="true">
+    <div class="axis"></div>
+    <svg class="star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+      <path d="M12 2 L13.2 10.8 L22 12 L13.2 13.2 L12 22 L10.8 13.2 L2 12 L10.8 10.8 Z"/>
+      <circle cx="12" cy="12" r="5.5" stroke-dasharray="1.2 2"/>
+    </svg>
+  </section>
+
+  <section class="cell day in" aria-label="Ma journée">
+    <h2>Aujourd'hui <small id="tally"></small></h2>
+    <ul class="tasks" id="tasks"><li class="plate" id="plate" aria-hidden="true"></li></ul>
+    <p class="more" id="more" hidden></p>
+    <div class="goals-block" id="goals-block" hidden>
+      <h2>Objectifs</h2>
+      <ul class="goals" id="goals"></ul>
+    </div>
+  </section>
+
+  <footer class="bar in late">
+    <div class="apps" id="apps"><div class="plate" id="appPlate" aria-hidden="true"></div></div>
+    <p class="status" id="status"></p>
+  </footer>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------------- Réglages par l'URL ----------------
+     ?sheet=2PACX-…   feuille Google Sheets publiée sur le web (identifiant de l'adresse « pub »)
+     ?csv=URL         n'importe quel CSV (même format que modele-google-sheets.csv)
+     ?gist=ID         premier fichier d'un gist GitHub, au format data.md
+     ?src=data.md     fichier markdown à côté de la page (défaut)
+     ?write=URL       script Apps Script qui coche une tâche quand on appuie sur OK (facultatif)
+     ?relay=URL       le pont qui lance les applis (défaut : la machine qui sert cette page)
+     ?h=19.5          force l'heure de la lumière, pour tester                                   */
+  var P = new URLSearchParams(location.search);
+  var SHEET = P.get('sheet'), CSV = P.get('csv'), GIST = P.get('gist'), SRC = P.get('src') || 'data.md', WRITE = P.get('write');
+  var RELAY = P.get('relay') || (/^http:/.test(location.protocol) ? location.origin : '');
+  var FORCED_HOUR = P.has('h') ? parseFloat(P.get('h')) : null;
+  var REFRESH_MS = (SHEET || CSV || GIST) ? 120000 : 30000;
+  var MAX_TASKS = 7, STORE_KEY = 'fenetre.v2';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var JOURS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+  var MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+
+  /* Les tuiles. Une page ne peut pas lancer les applis de la TV elle-même : c'est le pont (bridge.py) qui le fait. */
+  var APPS = [
+    { id: 'netflix', name: 'Netflix' },
+    { id: 'prime', name: 'Prime Video' },
+    { id: 'youtube', name: 'YouTube' },
+    { id: 'canal', name: 'Canal+' },
+    { id: 'spotify', name: 'Spotify' },
+    { id: 'home', name: 'Accueil TV' }
+  ];
+  $('apps').insertAdjacentHTML('beforeend', APPS.map(function (a) { return '<div class="app" data-app="' + a.id + '"><span class="name">' + a.name + '</span></div>'; }).join(''));
+
+  /* ---------------- La lumière qui tourne avec l'heure ----------------
+     Images clés : heure → position du soleil, couleur, intensité, ombre de nuit. */
+  var LIGHT = [
+    { h: 0,    x: 50,  y: 118, c: '#6F7FAE', a: .16, s: .58 },
+    { h: 5,    x: -5,  y: 98,  c: '#8A86B0', a: .14, s: .55 },
+    { h: 6.5,  x: 2,   y: 72,  c: '#FFB27A', a: .55, s: .32 },
+    { h: 8.5,  x: 18,  y: 40,  c: '#FFD3A8', a: .62, s: .1 },
+    { h: 12.5, x: 50,  y: 6,   c: '#FFFFFF', a: .62, s: 0 },
+    { h: 16.5, x: 82,  y: 38,  c: '#FFD8B0', a: .6,  s: .08 },
+    { h: 18.8, x: 100, y: 70,  c: '#FF9C6E', a: .52, s: .28 },
+    { h: 20.5, x: 108, y: 98,  c: '#8E7FA8', a: .18, s: .52 },
+    { h: 24,   x: 50,  y: 118, c: '#6F7FAE', a: .16, s: .58 }
+  ];
+  function hex(c) { return [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)]; }
+  function mixc(a, b, t) { a = hex(a); b = hex(b); return 'rgb(' + [0, 1, 2].map(function (i) { return Math.round(a[i] + (b[i] - a[i]) * t); }).join(',') + ')'; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function paintLight(hour) {
+    var i = 0; while (i < LIGHT.length - 2 && LIGHT[i + 1].h <= hour) i++;
+    var a = LIGHT[i], b = LIGHT[i + 1], t = (hour - a.h) / (b.h - a.h); t = t * t * (3 - 2 * t);
+    var r = document.documentElement.style;
+    r.setProperty('--lx', lerp(a.x, b.x, t) + '%'); r.setProperty('--ly', lerp(a.y, b.y, t) + '%');
+    r.setProperty('--la', lerp(a.a, b.a, t).toFixed(3)); r.setProperty('--shade', lerp(a.s, b.s, t).toFixed(3));
+    r.setProperty('--light', mixc(a.c, b.c, t));
+  }
+
+  /* ---------------- Horloge ---------------- */
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  var lastMinute = -1;
+  function tick() {
+    var d = new Date(), m = d.getHours() * 60 + d.getMinutes();
+    if (m === lastMinute) return;
+    lastMinute = m;
+    $('clock').innerHTML = pad(d.getHours()) + '<span class="sep">:</span>' + pad(d.getMinutes());
+    $('date').textContent = JOURS[d.getDay()] + ' ' + d.getDate() + ' ' + MOIS[d.getMonth()];
+    paintLight(FORCED_HOUR !== null ? FORCED_HOUR : d.getHours() + d.getMinutes() / 60);
+  }
+
+  /* ---------------- Lecture : markdown ou CSV ---------------- */
+  function norm(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); }
+  function num(s) { s = String(s || '').replace(/\s/g, '').replace(',', '.').replace('%', ''); var v = parseFloat(s); return isNaN(v) ? null : v; }
+  function parseMarkdown(text) {
+    var out = { tasks: [], goals: [], note: '' }, section = 'tasks';
+    text.replace(/\r/g, '').split('\n').forEach(function (raw, i) {
+      var line = raw.trim(); if (!line) return;
+      var head = line.match(/^#+\s*(.+)$/);
+      if (head) { var h = norm(head[1]); section = /objectif/.test(h) ? 'goals' : /note|mot/.test(h) ? 'note' : 'tasks'; return; }
+      if (section === 'note') { out.note += (out.note ? ' ' : '') + line.replace(/^[-*]\s*/, ''); return; }
+      var item = line.match(/^[-*]\s+(?:\[( |x|X)\]\s*)?(.+)$/); if (!item) return;
+      if (section === 'tasks') out.tasks.push({ text: item[2], done: (item[1] || '').toLowerCase() === 'x', row: i + 1 });
+      else out.goals.push(goalFromText(item[2]));
+    });
+    return out;
+  }
+  function goalFromText(s) {
+    var g = { name: s, value: null, max: null };
+    var frac = s.match(/^(.*?)\s*[:\-–]\s*(\d+(?:[.,]\d+)?)\s*(?:\/|sur)\s*(\d+(?:[.,]\d+)?)\s*$/i);
+    var pct = s.match(/^(.*?)\s*[:\-–]\s*(\d+(?:[.,]\d+)?)\s*%\s*$/);
+    if (frac) { g.name = frac[1]; g.value = num(frac[2]); g.max = num(frac[3]); }
+    else if (pct) { g.name = pct[1]; g.value = num(pct[2]); g.max = 100; g.pct = true; }
+    return g;
+  }
+  function parseCSV(text) {
+    var rows = [], row = [], cell = '', q = false;
+    text = text.replace(/\r/g, '');
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === ',' || ch === ';') { row.push(cell); cell = ''; }
+      else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+      else cell += ch;
+    }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    var out = { tasks: [], goals: [], note: '' };
+    rows.forEach(function (r, i) {
+      var type = norm(r[0]), text = (r[1] || '').trim();
+      if (!text || type === 'type') return;
+      if (/^t[aâ]che|^todo|^a faire/.test(type)) {
+        var d = norm(r[2]); out.tasks.push({ text: text, done: d === 'true' || d === 'vrai' || d === 'x' || d === 'oui' || d === '1', row: i + 1 });
+      } else if (/^objectif|^goal/.test(type)) {
+        var v = num(r[2]), mx = num(r[3]);
+        var g = { name: text, value: v, max: mx };
+        if (v !== null && mx === null) { g.max = 100; g.pct = true; }
+        if (v === null) g = goalFromText(text);
+        out.goals.push(g);
+      } else if (/^note/.test(type)) out.note += (out.note ? ' ' : '') + text;
+    });
+    return out;
+  }
+  function parse(text) { return /^\s*(#|-\s)/m.test(text) && !/^type\s*[,;]/im.test(text) ? parseMarkdown(text) : parseCSV(text); }
+
+  /* ---------------- Affichage ---------------- */
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function fmt(n) { return (Math.round(n * 10) / 10).toString().replace('.', ','); }
+  /* Coches faites à la télécommande : gardées en local jusqu'à ce que la source les reflète,
+     sinon le rafraîchissement suivant les effacerait. */
+  var OVERRIDE_KEY = 'fenetre.overrides';
+  function loadOverrides() { try { return JSON.parse(localStorage.getItem(OVERRIDE_KEY)) || {}; } catch (e) { return {}; } }
+  function saveOverrides(o) { try { localStorage.setItem(OVERRIDE_KEY, JSON.stringify(o)); } catch (e) {} }
+  function applyOverrides(data) {
+    var o = loadOverrides(), changed = false, now = Date.now();
+    data.tasks.forEach(function (t) {
+      var ov = o[t.text];
+      if (!ov) return;
+      if (ov.done === t.done || now - ov.at > 36e5 * 36) { delete o[t.text]; changed = true; }   // la source a suivi, ou c'est trop vieux
+      else t.done = ov.done;
+    });
+    if (changed) saveOverrides(o);
+    return data;
+  }
+
+  var previousDone = null, lastData = null, shownTasks = [];
+  function render(data) {
+    lastData = data;
+    var doneNow = {}; data.tasks.forEach(function (t) { if (t.done) doneNow[t.text] = true; });
+    var ordered = data.tasks.filter(function (t) { return !t.done; }).concat(data.tasks.filter(function (t) { return t.done; }));
+    shownTasks = ordered.slice(0, MAX_TASKS);
+    var list = $('tasks');
+    list.innerHTML = '<li class="plate" id="plate" aria-hidden="true"></li>' + (shownTasks.length ? shownTasks.map(function (t) {
+      var fresh = t.done && previousDone && !previousDone[t.text];
+      return '<li class="task' + (t.done ? ' done' : '') + (fresh ? ' just-done' : '') + '"><span class="mark"></span><span class="txt">' + esc(t.text) + '</span></li>';
+    }).join('') : '<li><p class="empty">Rien de prévu aujourd’hui.</p></li>');
+    previousDone = doneNow;
+    var done = data.tasks.filter(function (t) { return t.done; }).length;
+    $('tally').textContent = data.tasks.length ? done + ' / ' + data.tasks.length : '';
+    $('goals-block').hidden = !data.goals.length;
+    $('goals').innerHTML = data.goals.slice(0, 4).map(function (g) {
+      var has = g.value !== null && g.max;
+      var ratio = has ? Math.max(0, Math.min(1, g.value / g.max)) : 0;
+      var count = !has ? '' : g.pct ? Math.round(g.value) + ' %' : fmt(g.value) + ' / ' + fmt(g.max);
+      return '<li class="goal"><div class="row"><span class="name">' + esc(g.name) + '</span><span class="count">' + count + '</span></div>' +
+        (has ? '<div class="track"><div class="fill" style="width:' + (ratio * 100).toFixed(1) + '%"></div></div>' : '') + '</li>';
+    }).join('');
+    $('note').textContent = data.note;
+    fitTasks(ordered.length);
+    placePlate();
+  }
+  // En dernier, quand tout est en place : on retire les dernières lignes tant que la liste déborde.
+  function fitTasks(total) {
+    var list = $('tasks'), more = $('more');
+    function setMore() { var hidden = total - shownTasks.length; more.hidden = hidden <= 0; more.textContent = hidden > 0 ? 'et ' + hidden + ' autre' + (hidden > 1 ? 's' : '') : ''; }
+    setMore();
+    while (shownTasks.length > 1 && list.scrollHeight > list.clientHeight + 1) { list.removeChild(list.lastElementChild); shownTasks.pop(); setMore(); }
+    if (focusIndex >= shownTasks.length) focusIndex = shownTasks.length - 1;
+  }
+
+  /* ---------------- Télécommande ----------------
+     Deux zones : la liste (haut/bas, OK coche) et les tuiles (gauche/droite, OK lance).
+     Bas depuis la dernière tâche va aux tuiles ; haut depuis les tuiles revient à la liste. */
+  var zone = 'tasks', focusIndex = 0, appIndex = 0, focusTimer = null, awake = false;
+  function placePlate() {
+    var rows = document.querySelectorAll('#tasks .task'), plate = $('plate');
+    if (rows.length && plate) {
+      var el = rows[Math.max(0, Math.min(focusIndex, rows.length - 1))];
+      plate.style.transform = 'translateY(' + el.offsetTop + 'px)';
+      plate.style.height = el.offsetHeight + 'px';
+    }
+    var tiles = document.querySelectorAll('#apps .app'), ap = $('appPlate');
+    if (tiles.length && ap) {
+      var t = tiles[Math.max(0, Math.min(appIndex, tiles.length - 1))];
+      ap.style.transform = 'translateX(' + t.offsetLeft + 'px)';
+      ap.style.width = t.offsetWidth + 'px'; ap.style.height = t.offsetHeight + 'px';
+      tiles.forEach(function (x, i) { x.classList.toggle('on', i === appIndex); });
+    }
+  }
+  function showZones() {
+    $('tasks').classList.toggle('focused', awake && zone === 'tasks' && shownTasks.length > 0);
+    $('apps').classList.toggle('focused', awake && zone === 'apps');
+  }
+  function wake() {
+    awake = true; showZones();
+    clearTimeout(focusTimer);
+    focusTimer = setTimeout(function () { awake = false; showZones(); }, 45000);
+  }
+  function toggleFocused() {
+    var t = shownTasks[focusIndex]; if (!t) return;
+    t.done = !t.done;
+    var o = loadOverrides(); o[t.text] = { done: t.done, at: Date.now() }; saveOverrides(o);
+    if (WRITE) fetch(WRITE + (WRITE.indexOf('?') < 0 ? '?' : '&') + 'row=' + t.row + '&done=' + (t.done ? 1 : 0), { mode: 'no-cors' }).catch(function () {});
+    render(lastData);
+    var i = shownTasks.indexOf(t); if (i >= 0) focusIndex = i;   // la plaque suit la tâche cochée
+    placePlate();
+  }
+  function launchFocused() {
+    var a = APPS[appIndex], tile = document.querySelectorAll('#apps .app')[appIndex];
+    if (!a) return;
+    if (!RELAY) { $('status').textContent = 'Pas de pont : les tuiles ne peuvent pas lancer les applis.'; return; }
+    tile.classList.add('busy'); $('status').textContent = 'Ouverture de ' + a.name + '…';
+    fetch(RELAY + '/launch?app=' + a.id + '&_=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { $('status').textContent = j.ok ? '' : ('Impossible d’ouvrir ' + a.name + (j.error ? ' : ' + j.error : '')); })
+      .catch(function () { $('status').textContent = 'Pont injoignable : la machine qui lance les applis est éteinte.'; })
+      .then(function () { tile.classList.remove('busy'); });
+  }
+  document.addEventListener('keydown', function (e) {
+    var k = e.keyCode, n = shownTasks.length;
+    if (k !== 37 && k !== 38 && k !== 39 && k !== 40 && k !== 13) return;   // Retour (8, 27, 461) n'est pas intercepté : la TV reprend la main.
+    e.preventDefault();
+    if (!awake) { zone = n ? 'tasks' : 'apps'; wake(); placePlate(); return; }   // premier appui : on réveille, sans bouger
+    if (zone === 'tasks') {
+      if (k === 40) { if (focusIndex >= n - 1) zone = 'apps'; else focusIndex++; }
+      else if (k === 38) { if (focusIndex > 0) focusIndex--; }
+      else if (k === 13) toggleFocused();
+      else if (k === 39 || k === 37) zone = 'apps';
+    } else {
+      if (k === 39) appIndex = (appIndex + 1) % APPS.length;
+      else if (k === 37) appIndex = (appIndex - 1 + APPS.length) % APPS.length;
+      else if (k === 38) { if (n) zone = 'tasks'; }
+      else if (k === 13) launchFocused();
+    }
+    wake(); placePlate();
+  });
+
+  /* ---------------- Chargement, avec repli sur la dernière version ---------------- */
+  function sourceURL() {
+    if (SHEET) return 'https://docs.google.com/spreadsheets/d/e/' + encodeURIComponent(SHEET) + '/pub?output=csv&single=true&_=' + Date.now();
+    if (CSV) return CSV + (CSV.indexOf('?') < 0 ? '?' : '&') + '_=' + Date.now();
+    return SRC + (SRC.indexOf('?') < 0 ? '?' : '&') + '_=' + Date.now();
+  }
+  function fetchText() {
+    if (GIST) return fetch('https://api.github.com/gists/' + encodeURIComponent(GIST), { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('gist ' + r.status); return r.json(); })
+      .then(function (j) { return j.files[Object.keys(j.files)[0]].content; });
+    return fetch(sourceURL(), { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); });
+  }
+  function save(text) { try { localStorage.setItem(STORE_KEY, JSON.stringify({ text: text, at: Date.now() })); } catch (e) {} }
+  function restore() { try { return JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) { return null; } }
+  function load() {
+    fetchText().then(function (text) { save(text); render(applyOverrides(parse(text))); if (/^Liste/.test($('status').textContent)) $('status').textContent = ''; })
+      .catch(function () {
+        var last = restore();
+        if (last) { render(applyOverrides(parse(last.text))); var d = new Date(last.at); $('status').textContent = 'Liste injoignable, version de ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+        else $('status').textContent = 'Liste injoignable. Vérifie la connexion de la TV.';
+      });
+  }
+
+  var cached = restore(); if (cached) render(applyOverrides(parse(cached.text)));
+  window.addEventListener('resize', placePlate);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { if (lastData) render(lastData); });
+  tick(); setInterval(tick, 1000);
+  setTimeout(function () { document.querySelector('.ground').classList.add('ready'); }, 1500);
+  load(); setInterval(load, REFRESH_MS);
+})();
+</script>
+</body>
+</html>
